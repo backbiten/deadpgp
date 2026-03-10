@@ -16,7 +16,6 @@ import struct
 
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 
 
 _LENGTH_PREFIX_FMT = ">I"
