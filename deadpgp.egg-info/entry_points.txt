@@ -1,0 +1,2 @@
+[console_scripts]
+deadpgp = deadpgp.cli:main

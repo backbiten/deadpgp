@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deadpgp"
+version = "0.1.0"
+description = "Old PGP protocols from the 1980s and 1990s, reinvented for the modern 21st century."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "cryptography>=41.0",
+]
+
+[project.scripts]
+deadpgp = "deadpgp.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["deadpgp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
