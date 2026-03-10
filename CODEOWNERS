@@ -1,0 +1,37 @@
+# CODEOWNERS — DeadPGP
+#
+# Defines which team members must review changes to critical paths.
+# GitHub enforces these rules when branch protection requires CODEOWNERS review.
+#
+# Role reference: see .deadpgp/qa_roles.yml
+#
+# Format: <path pattern>  <owner1> [owner2 ...]
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ----- Default owner (catches everything not matched below) -----
+*                               @backbiten
+
+# ----- Cryptographic core — Foreman / Superintendent review required -----
+deadpgp/crypto_box.py           @backbiten
+deadpgp/crypto_pwd.py           @backbiten
+deadpgp/keys.py                 @backbiten
+deadpgp/armor.py                @backbiten
+
+# ----- QA/QC engine — Foreman review required -----
+deadpgp/qa.py                   @backbiten
+deadpgp/doctor.py               @backbiten
+.deadpgp/                       @backbiten
+
+# ----- CLI — Foreman review required -----
+deadpgp/cli.py                  @backbiten
+
+# ----- Release tooling & Seat of Life — PM / Superintendent review required -----
+tools/                          @backbiten
+.github/workflows/              @backbiten
+
+# ----- Tests — Journeyman and above -----
+tests/                          @backbiten
+
+# ----- Package metadata -----
+pyproject.toml                  @backbiten
+CODEOWNERS                      @backbiten
