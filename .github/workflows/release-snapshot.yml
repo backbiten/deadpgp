@@ -1,0 +1,52 @@
+name: Release Snapshot (Seat of Life)
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    name: Build Seat of Life snapshot
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to upload release assets
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for accurate git metadata
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install DeadPGP
+        run: |
+          pip install -e .
+          pip install cryptography argon2-cffi
+
+      - name: Generate snapshot and manifest
+        run: |
+          python tools/seat_of_life/snapshot.py \
+            --output dist/seat_of_life
+
+      - name: Upload snapshot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: seat-of-life-snapshot
+          path: dist/seat_of_life/
+          retention-days: 90
+
+      - name: Upload to GitHub Release (if triggered by release)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/seat_of_life/snapshot.tar.gz
+            dist/seat_of_life/manifest.json

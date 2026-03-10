@@ -1,0 +1,87 @@
+# DeadPGP QA/QC Role Mapping
+#
+# This file documents the construction-style role hierarchy used for QA/QC
+# governance of the DeadPGP project.  It is used for documentation and local
+# tooling output only — it is NOT a security enforcement mechanism.
+#
+# Security enforcement is done via:
+#   - CODEOWNERS (required reviews)
+#   - Branch protection rules (merge gates)
+#   - GitHub Actions QA workflows (automated checks)
+#
+# Hierarchy (top to bottom authority):
+#   Project Manager / General Superintendent
+#     └── Superintendent / General Foreman
+#           └── Foreman / Lead Hand
+#                 └── Journeyman
+#                       └── Apprentice
+#                             └── Laborer / Contributor
+#
+# Flow summary:
+#   Laborers/Apprentices/Journeymen → write code, open PRs, run local QA
+#   Foremen/Lead Hands             → review PRs, verify QA pass, approve merges
+#   Superintendents/Gen. Foremen   → approve merges to protected branches
+#   Project Managers/Gen. Supers   → approve releases, sign off snapshots
+
+roles:
+  project_manager:
+    description: >
+      Final release authority. Approves tags and Seat-of-Life snapshots.
+      Equivalent to General Superintendent on a construction site.
+    github_teams:
+      - backbiten/maintainers
+    github_users: []
+
+  superintendent:
+    description: >
+      Approves merges to main/protected branches. Equivalent to
+      General Foreman — coordinates between management and field.
+    github_teams:
+      - backbiten/maintainers
+    github_users: []
+
+  foreman:
+    description: >
+      Reviews PRs that touch crypto, QA, or release tooling. Lead Hand
+      on the field — assigns fixes and verifies QA reports.
+    github_teams:
+      - backbiten/maintainers
+    github_users: []
+
+  journeyman:
+    description: >
+      Experienced contributor. Opens PRs, runs full QA suite locally,
+      assists with reviews.
+    github_teams: []
+    github_users: []
+
+  apprentice:
+    description: >
+      Contributor in training. Opens PRs with foreman supervision.
+      Runs `deadpgp qa --direct` before submitting.
+    github_teams: []
+    github_users: []
+
+  laborer:
+    description: >
+      Contributor / community member. Opens issues, submits patches.
+      All contributions require QA gate to pass in CI before merge.
+    github_teams: []
+    github_users: []
+
+# QA inspection flow
+#
+#  ┌─────────────────────────────────────────────────────────┐
+#  │  OUTBOUND (shipping code)                               │
+#  │  Laborer → commits → Journeyman reviews →               │
+#  │  Foreman approves → CI QA gate passes →                 │
+#  │  Superintendent merges → PM signs release               │
+#  └─────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────────────────────────────────────┐
+#  │  INBOUND (monitoring / audit)                           │
+#  │  PM monitors release health                             │
+#  │  Superintendent monitors branch health                  │
+#  │  Foreman / Lead Hand monitors PR queue & QA failures    │
+#  │  Journeyman / Apprentice runs `deadpgp qa` locally      │
+#  └─────────────────────────────────────────────────────────┘
