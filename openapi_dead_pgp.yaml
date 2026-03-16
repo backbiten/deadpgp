@@ -1,0 +1,246 @@
+openapi: "3.0.3"
+
+info:
+  title: Dead PGP — HKP-Compatible Keyserver API
+  description: |
+    OpenAPI specification for **Dead PGP** mode.
+
+    Dead PGP mode exposes an HKP (HTTP Keyserver Protocol) compatible interface
+    (`/pks/lookup` and `/pks/add`) designed for local/dev use. Endpoints are
+    intentionally **unauthenticated** in this mode — do not expose them publicly.
+
+    The two HKP endpoints follow the classic MIT/SKS keyserver convention:
+    - `GET /pks/lookup` — search for or retrieve an OpenPGP public key.
+    - `POST /pks/add`   — submit an ASCII-armored OpenPGP public key.
+  version: "0.1.0"
+  contact:
+    name: Dead PGP project
+    url: https://github.com/TearBear250/deadpgp
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:11371
+    description: Local Dead PGP HKP stub (default port 11371)
+
+tags:
+  - name: hkp
+    description: HKP (HTTP Keyserver Protocol) endpoints
+
+paths:
+  /pks/lookup:
+    get:
+      operationId: hkpLookup
+      summary: Look up or retrieve an OpenPGP public key
+      description: |
+        Implements the HKP `lookup` operation. Supported `op` values:
+
+        | op       | Description                                |
+        |----------|--------------------------------------------|
+        | `get`    | Return the ASCII-armored public key block  |
+        | `index`  | Return a human-readable key listing        |
+        | `vindex` | Return a verbose machine-readable listing  |
+      tags:
+        - hkp
+      parameters:
+        - name: op
+          in: query
+          required: true
+          description: |
+            Operation to perform: `get`, `index`, or `vindex`.
+          schema:
+            type: string
+            enum:
+              - get
+              - index
+              - vindex
+          example: get
+        - name: search
+          in: query
+          required: true
+          description: |
+            Search term. Accepted formats:
+            - `0x<fingerprint>` — exact fingerprint lookup (40 hex chars for v4 key)
+            - `0x<keyid>`       — 8- or 16-digit key-ID lookup
+            - `<email>`         — email/UID substring search
+          schema:
+            type: string
+          example: "0xDEADBEEFDEADBEEF"
+        - name: options
+          in: query
+          required: false
+          description: |
+            Comma-separated HKP option flags. The only flag honoured in dead mode is `mr`
+            (machine-readable output).
+          schema:
+            type: string
+          example: "mr"
+        - name: fingerprint
+          in: query
+          required: false
+          description: |
+            When set to `on`, include the full fingerprint in `index`/`vindex` output.
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+          example: "on"
+        - name: exact
+          in: query
+          required: false
+          description: |
+            When set to `on`, require an exact match on the search term rather than a
+            substring search.
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+          example: "on"
+      responses:
+        "200":
+          description: |
+            Key found. Content-Type depends on `op`:
+            - `op=get`    → `application/pgp-keys` (ASCII-armored key block)
+            - `op=index`  → `text/plain` (human-readable listing)
+            - `op=vindex` → `text/plain` (verbose machine-readable listing, `info:1:N` header)
+          content:
+            application/pgp-keys:
+              schema:
+                type: string
+                example: |
+                  -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+                  mQGNBGAA...
+                  -----END PGP PUBLIC KEY BLOCK-----
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  info:1:1
+                  pub:DEADBEEFDEADBEEF:1:4096:1609459200::
+                  uid:Alice <alice@example.com>:1609459200::
+        "404":
+          description: No key found matching the search term.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "No keys found"
+        "400":
+          description: Bad request — missing or invalid query parameters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: |
+            Operation not implemented (e.g. unsupported `op` value in dead mode).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /pks/add:
+    post:
+      operationId: hkpAdd
+      summary: Submit an OpenPGP public key
+      description: |
+        Implements the HKP `add` operation. The request body must be an
+        `application/x-www-form-urlencoded` payload containing a single field
+        `keytext` whose value is a percent-encoded ASCII-armored OpenPGP public key.
+
+        In **dead mode** the key is stored in an in-memory map keyed by fingerprint;
+        no persistence is performed across server restarts.
+      tags:
+        - hkp
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - keytext
+              properties:
+                keytext:
+                  type: string
+                  description: |
+                    ASCII-armored OpenPGP public key block (percent-encoded as per
+                    `application/x-www-form-urlencoded`).
+                  example: |
+                    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+                    mQGNBGAA...
+                    -----END PGP PUBLIC KEY BLOCK-----
+      responses:
+        "200":
+          description: Key accepted and stored.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Key imported successfully"
+        "400":
+          description: |
+            Bad request — missing `keytext`, or the armored block could not be parsed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Key already exists in the store (same fingerprint).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /pks/lookup/{fingerprint}:
+    get:
+      operationId: hkpLookupByFingerprint
+      summary: Convenience endpoint — retrieve a key by exact fingerprint path segment
+      description: |
+        Non-standard convenience route. Equivalent to
+        `GET /pks/lookup?op=get&search=0x{fingerprint}`.
+      tags:
+        - hkp
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          description: 40-character hex fingerprint (v4 OpenPGP key).
+          schema:
+            type: string
+            pattern: "^[0-9A-Fa-f]{40}$"
+          example: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+      responses:
+        "200":
+          description: ASCII-armored public key block.
+          content:
+            application/pgp-keys:
+              schema:
+                type: string
+        "404":
+          description: No key found for the given fingerprint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+          example: "key not found"
+        code:
+          type: integer
+          description: Optional numeric error code.
+          example: 404
