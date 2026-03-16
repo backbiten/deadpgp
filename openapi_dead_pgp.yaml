@@ -1,0 +1,295 @@
+openapi: 3.0.3
+info:
+  title: Dead PGP — HKP-Compatible Keyserver API
+  description: |
+    OpenAPI specification for Dead PGP mode, providing HKP (HTTP Keyserver Protocol)
+    compatible endpoints for local/dev use. This spec intentionally leaves endpoints
+    unauthenticated — it is designed for dead (offline/local) mode only.
+
+    **Warning:** Do not expose these endpoints on a public network without additional
+    authentication and rate-limiting layers.
+  version: 0.1.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:11371
+    description: Local HKP stub (dead mode)
+
+tags:
+  - name: hkp
+    description: HKP (MIT PGP Keyserver Protocol) compatible operations
+
+paths:
+  /pks/lookup:
+    get:
+      tags:
+        - hkp
+      summary: Look up a key by search term or fingerprint
+      description: |
+        HKP-compatible key lookup. Supported operations:
+        - `op=get`    — return key material in ASCII-armored OpenPGP format
+        - `op=index`  — return a human-readable index of matching keys
+        - `op=vindex` — return a verbose (machine-readable) index
+      operationId: pksLookup
+      parameters:
+        - name: op
+          in: query
+          required: true
+          description: Operation to perform (get, index, vindex)
+          schema:
+            type: string
+            enum:
+              - get
+              - index
+              - vindex
+          example: get
+        - name: search
+          in: query
+          required: true
+          description: |
+            Search term. May be a key ID (0x<hex>), fingerprint, or email address /
+            user ID substring.
+          schema:
+            type: string
+          example: "0xDEADBEEFCAFEBABE"
+        - name: options
+          in: query
+          required: false
+          description: |
+            Comma-separated HKP option flags. Common values: `mr` (machine-readable),
+            `nm` (no-modify).
+          schema:
+            type: string
+          example: "mr"
+        - name: fingerprint
+          in: query
+          required: false
+          description: |
+            When `on`, return full fingerprints in index output.
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+          example: "on"
+        - name: exact
+          in: query
+          required: false
+          description: When `on`, require an exact match on the search term.
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+        - name: x-dead-mode
+          in: query
+          required: false
+          description: |
+            Dead PGP extension. When `1`, the server operates in fully offline /
+            local mode and will never attempt external keyserver lookups.
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
+          example: "1"
+      responses:
+        "200":
+          description: |
+            Success. For `op=get` the body is an ASCII-armored OpenPGP key block.
+            For `op=index` / `op=vindex` the body is an HKP index response.
+          content:
+            application/pgp-keys:
+              schema:
+                type: string
+                example: |
+                  -----BEGIN PGP PUBLIC KEY BLOCK-----
+                  ...
+                  -----END PGP PUBLIC KEY BLOCK-----
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  info:1:1
+                  pub:DEADBEEFCAFEBABE:1:4096:1609459200::
+                  uid:Alice <alice@example.com>:1609459200::
+        "400":
+          description: Bad request — missing or invalid query parameters.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: no search string provided"
+        "404":
+          description: No keys found matching the search term.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: no keys found"
+        "501":
+          description: Requested operation is not implemented.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: operation not implemented"
+
+  /pks/add:
+    post:
+      tags:
+        - hkp
+      summary: Submit a key to the keystore
+      description: |
+        HKP-compatible key submission. The request body must be a URL-encoded form
+        with a `keytext` field containing the ASCII-armored OpenPGP public key.
+
+        In dead mode this stores the key locally; no synchronisation with external
+        keyservers is performed.
+      operationId: pksAdd
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - keytext
+              properties:
+                keytext:
+                  type: string
+                  description: URL-encoded ASCII-armored OpenPGP public key block.
+                  example: |
+                    -----BEGIN PGP PUBLIC KEY BLOCK-----
+                    ...
+                    -----END PGP PUBLIC KEY BLOCK-----
+                options:
+                  type: string
+                  description: |
+                    Comma-separated HKP option flags (e.g. `nm` = no-modify).
+      responses:
+        "200":
+          description: Key imported successfully.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Key imported successfully."
+        "400":
+          description: Bad request — missing or malformed key data.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: no keytext provided"
+        "409":
+          description: Key already exists in the local store.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: key already present"
+        "422":
+          description: Key data could not be parsed as a valid OpenPGP key.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: invalid key material"
+
+  /pks/hashquery:
+    post:
+      tags:
+        - hkp
+      summary: Batch key lookup by binary key fingerprint hashes (SKS recon protocol)
+      description: |
+        Optional SKS reconciliation endpoint. Accepts a binary-encoded list of
+        key hashes and returns matching key material. This endpoint is provided
+        for compatibility; in dead mode it always returns an empty response.
+      operationId: pksHashquery
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Binary SKS hashquery response (may be empty in dead mode).
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "501":
+          description: Not implemented in this dead-mode server.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error: hashquery not implemented in dead mode"
+
+components:
+  schemas:
+    ArmoredKey:
+      type: string
+      description: |
+        An ASCII-armored OpenPGP public key block as defined in RFC 4880 §6.2.
+      example: |
+        -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+        mQGNBF...
+        -----END PGP PUBLIC KEY BLOCK-----
+
+    HkpIndexEntry:
+      type: object
+      description: A single entry from an HKP machine-readable index response.
+      properties:
+        keyId:
+          type: string
+          description: 16-character hex key ID.
+          example: "DEADBEEFCAFEBABE"
+        algo:
+          type: integer
+          description: OpenPGP public-key algorithm ID (RFC 4880 §9.1).
+          example: 1
+        keyLen:
+          type: integer
+          description: Key length in bits.
+          example: 4096
+        creationDate:
+          type: integer
+          description: Key creation timestamp (Unix epoch).
+          example: 1609459200
+        expirationDate:
+          type: integer
+          nullable: true
+          description: Key expiration timestamp (Unix epoch), or null if non-expiring.
+          example: null
+        flags:
+          type: string
+          description: |
+            HKP flags string. Characters: `r` = revoked, `d` = disabled,
+            `e` = expired.
+          example: ""
+        uids:
+          type: array
+          items:
+            type: object
+            properties:
+              uid:
+                type: string
+                description: User ID string.
+                example: "Alice <alice@example.com>"
+              creationDate:
+                type: integer
+                example: 1609459200
+              expirationDate:
+                type: integer
+                nullable: true
+                example: null
+              flags:
+                type: string
+                example: ""
