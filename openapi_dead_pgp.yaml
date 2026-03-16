@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: Dead PGP — HKP-compatible Key Server API
+  description: |
+    OpenAPI specification for **Dead PGP mode** — a local/dev keyserver that
+    implements the MIT PGP HKP (HTTP Keyserver Protocol) interface.
+
+    This spec is intentionally minimal and **unauthenticated**: it is designed
+    for local testing and dead-mode operation where no live key infrastructure
+    is required.
+
+    Endpoints:
+    - `GET /pks/lookup` — retrieve or index keys (HKP lookup)
+    - `POST /pks/add`   — submit a new key (HKP add)
+  version: 0.1.0
+  contact:
+    name: TearBear250/deadpgp
+    url: https://github.com/TearBear250/deadpgp
+  license:
+    name: GPL-3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local Dead PGP stub server (default)
+  - url: http://localhost:11371
+    description: Local Dead PGP stub server (HKP standard port)
+
+tags:
+  - name: hkp
+    description: HKP (HTTP Keyserver Protocol) compatible endpoints
+
+paths:
+  /pks/lookup:
+    get:
+      tags:
+        - hkp
+      summary: Look up or index PGP keys (HKP lookup)
+      description: |
+        Implements the HKP `GET /pks/lookup` endpoint.
+
+        Supported operations (`op`):
+        - `get`   — return the key material (ASCII-armored or machine-readable)
+        - `index` — return a human-readable HTML index of matching keys
+        - `vindex`— return a verbose machine-readable index (mr format)
+
+        **Dead mode note**: This endpoint never contacts an external keyserver.
+        All keys are served from the in-process in-memory store populated via
+        `POST /pks/add`.
+      operationId: pksLookup
+      parameters:
+        - name: op
+          in: query
+          required: true
+          description: Operation to perform
+          schema:
+            type: string
+            enum:
+              - get
+              - index
+              - vindex
+          example: get
+        - name: search
+          in: query
+          required: true
+          description: |
+            Key search term. Accepts:
+            - Email address (`alice@example.com`)
+            - Key ID (`0x<hex>`)
+            - Long key ID or fingerprint
+          schema:
+            type: string
+          example: alice@example.test
+        - name: options
+          in: query
+          required: false
+          description: Comma-separated HKP options (e.g. `mr` for machine-readable)
+          schema:
+            type: string
+          example: mr
+        - name: format
+          in: query
+          required: false
+          description: |
+            Response format hint (non-standard extension used by this stub).
+            - `armored` — ASCII-armored PGP key block (default for `op=get`)
+            - `mr`      — machine-readable index (for `op=index`/`vindex`)
+            - `html`    — HTML response (default for `op=index`)
+          schema:
+            type: string
+            enum:
+              - armored
+              - mr
+              - html
+          example: armored
+        - name: exact
+          in: query
+          required: false
+          description: If `on`, match search string exactly (no substring match)
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+          example: "off"
+        - name: fingerprint
+          in: query
+          required: false
+          description: If `on`, include fingerprints in the index output
+          schema:
+            type: string
+            enum:
+              - "on"
+              - "off"
+          example: "on"
+      responses:
+        "200":
+          description: Key(s) found and returned
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                armored:
+                  summary: ASCII-armored key block
+                  value: |
+                    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+                    mDMEY... (truncated)
+                    -----END PGP PUBLIC KEY BLOCK-----
+                machine_readable_index:
+                  summary: Machine-readable index (mr)
+                  value: |
+                    info:1:1
+                    pub:DEADBEEF01234567:1:4096:1710000000::
+                    uid:Alice <alice@example.test>:1710000000::
+            text/html:
+              schema:
+                type: string
+              examples:
+                html_index:
+                  summary: HTML key index page
+                  value: "<html><body><pre>pub   4096R/DEADBEEF 2024-03-10\nuid   Alice &lt;alice@example.test&gt;</pre></body></html>"
+        "404":
+          description: No keys found matching search criteria
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "No keys found"
+        "400":
+          description: Bad request — missing or invalid parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Missing required parameter: search"
+        "501":
+          description: Operation not implemented
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Operation not supported"
+
+  /pks/add:
+    post:
+      tags:
+        - hkp
+      summary: Submit a PGP public key (HKP add)
+      description: |
+        Implements the HKP `POST /pks/add` endpoint.
+
+        Accepts an ASCII-armored PGP public key block in the `keytext` form field
+        and stores it in the in-process in-memory key store.
+
+        **Dead mode note**: Keys are stored in memory only and do not persist
+        across server restarts. No signature verification is performed.
+      operationId: pksAdd
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - keytext
+              properties:
+                keytext:
+                  type: string
+                  description: ASCII-armored PGP public key block (URL-encoded)
+                  example: |
+                    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+                    mDMEY... (truncated)
+                    -----END PGP PUBLIC KEY BLOCK-----
+            encoding:
+              keytext:
+                style: form
+      responses:
+        "200":
+          description: Key accepted and stored
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Key imported successfully"
+        "400":
+          description: Bad request — missing key text or invalid PGP data
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Missing keytext parameter"
+        "500":
+          description: Internal server error
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Internal server error"
+
+components:
+  schemas:
+    KeyEntry:
+      type: object
+      description: Internal representation of a stored key (not exposed over HKP wire format)
+      properties:
+        keyid:
+          type: string
+          description: Short key ID (last 8 hex digits of fingerprint)
+          example: DEADBEEF
+        fingerprint:
+          type: string
+          description: Full 40-character hexadecimal fingerprint
+          example: "DEADBEEF01234567DEADBEEF01234567DEADBEEF"
+        uids:
+          type: array
+          description: User IDs associated with the key
+          items:
+            type: string
+          example:
+            - "Alice <alice@example.test>"
+        created:
+          type: integer
+          description: Key creation timestamp (Unix epoch)
+          example: 1710000000
+        algorithm:
+          type: integer
+          description: PGP algorithm identifier (RFC 4880)
+          example: 1
+        bits:
+          type: integer
+          description: Key size in bits
+          example: 4096
+        armored:
+          type: string
+          description: ASCII-armored PGP public key block
+          example: "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----"
