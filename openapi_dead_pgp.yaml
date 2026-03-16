@@ -1,0 +1,657 @@
+openapi: 3.0.3
+info:
+  title: Crazy Server Base 2 - Key Server API (Dead PGP mode)
+  version: "1.0.0"
+  description: |
+    Key server API configured for Dead PGP mode (local, experimental, unauthenticated).
+    - Dead PGP mode: local, non-replicated, experimental features allowed.
+    - This configuration intentionally permits unauthenticated uploads and operations typical for local/development usage.
+servers:
+  - url: http://localhost:8080/v1
+    description: Local / Dead mode server (primary)
+  - url: https://api.example.com/v1
+    description: Production / Living mode server (present for reference)
+tags:
+  - name: keys
+    description: Key upload, retrieval and revocation endpoints
+  - name: search
+    description: Search endpoints
+  - name: sync
+    description: Server-to-server sync endpoints
+  - name: admin
+    description: Admin and operational endpoints
+
+# NOTE: No global security requirement so dead-mode operations may be unauthenticated.
+# Security schemes remain available in components for reference / living mode use.
+paths:
+  /keys:
+    post:
+      tags: [keys]
+      summary: Upload a KeyBundle (create or update)
+      description: |
+        Uploads a KeyBundle. The server validates canonicalization and signatures.
+        In dead mode (local) authentication is not required; this operation is intentionally open in this spec.
+        In living mode authentication should be required (ApiKeyAuth or BearerAuth).
+      operationId: uploadKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedRecord'
+            examples:
+              example1:
+                summary: Create or update key (dead mode)
+                value:
+                  recordId: "rec_9f6b3cdeadbeef"
+                  payload:
+                    fingerprint: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+                    fingerprintAlgorithm: "sha256"
+                    armoredPublicKey: |
+                      -----BEGIN PGP PUBLIC KEY BLOCK-----
+                      Version: OpenPGP.js v4.10.10
+                      Comment: DeadPGP experimental key
+                      mQENBF...
+                      -----END PGP PUBLIC KEY BLOCK-----
+                    userIds:
+                      - name: "Alice Example"
+                        email: "alice@example.test"
+                        comment: "test key"
+                    createdAt: "2026-03-16T12:00:00Z"
+                    uploadedAt: "2026-03-16T12:00:10Z"
+                    lastModifiedAt: "2026-03-16T12:00:10Z"
+                    uploader: "local"
+                    mode: "dead"
+                    metadata:
+                      source: "manual-upload"
+                    signatures:
+                      - signer: "AABBCCDDEEFF00112233445566778899AABBCCDD"
+                        signature: "b64:MIIBIjANBg..."
+                        signatureType: "self"
+                        createdAt: "2026-03-16T12:00:05Z"
+                    revocations: []
+                  signatures:
+                    - signer: "AABBCCDDEEFF00112233445566778899AABBCCDD"
+                      signature: "b64:MIIBIjANBg..."
+                      signatureType: "self"
+                      createdAt: "2026-03-16T12:00:05Z"
+                  canonicalizedAt: "2026-03-16T12:00:05Z"
+      responses:
+        '201':
+          description: Key uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '401':
+          description: Authentication required (in living mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '409':
+          description: Conflict (e.g., inconsistent signed record)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+  /keys/{fingerprint}:
+    get:
+      tags: [keys]
+      summary: Retrieve a key bundle by fingerprint
+      description: Returns the canonical SignedRecord for the given fingerprint (SHA-1 or SHA-256). In dead mode server returns canonical serialized and all associated signatures/revocations.
+      operationId: getKeyByFingerprint
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$'
+            example: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+          description: Canonical fingerprint (hex). Accepts SHA-1 (40 hex) or SHA-256 (64 hex).
+        - name: includeRevocations
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Include revocation records (default true in this config). In living mode consider defaulting to false for privacy.
+      responses:
+        '200':
+          description: KeyBundle found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedRecord'
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+  /keys/fingerprint/{algorithm}/{digest}:
+    get:
+      tags: [keys]
+      summary: Lookup key by digest algorithm and digest
+      operationId: getByDigest
+      parameters:
+        - name: algorithm
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [sha1, sha256]
+        - name: digest
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{40,64}$'
+            example: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+          description: "Hex digest string. Expected length: 40 hex chars for sha1, 64 hex chars for sha256."
+      responses:
+        '200':
+          description: KeyBundle found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedRecord'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+  /keys/{fingerprint}/revoke:
+    post:
+      tags: [keys]
+      summary: Upload a revocation signature for the key
+      description: |
+        Submit a revocation signature. The server verifies the revocation and records it.
+        Revocations are accepted if the signature verifies against the key's public material. In dead mode unauthenticated revocation uploads are allowed.
+      operationId: revokeKey
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$'
+          description: Canonical fingerprint (hex).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revocation'
+            examples:
+              example1:
+                summary: Simple revocation
+                value:
+                  revoker: "AABBCCDDEEFF00112233445566778899AABBCCDD"
+                  reason: "Key compromised (test)"
+                  signature: "b64:MIICdwIBAAKBgQ..."
+                  revokedAt: "2026-03-17T08:00:00Z"
+      responses:
+        '200':
+          description: Revocation recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Invalid revocation signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '401':
+          description: Authentication required (living mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+  /search:
+    get:
+      tags: [search]
+      summary: Search keys by email or name
+      description: |
+        Search by email, name, or hashed-email. In dead mode plain email searches are allowed; in living mode prefer emailHash for privacy protection.
+      operationId: searchKeys
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Free-text search query
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Plain email (may be disabled in living mode)
+        - name: emailHash
+          in: query
+          required: false
+          schema:
+            type: string
+          description: SHA-256 hex of email (preferred for living mode)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KeyBundleSummary'
+              example:
+                total: 1
+                items:
+                  - fingerprint: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+                    primaryUser: "Alice Example <alice@example.test>"
+                    mode: "dead"
+                    createdAt: "2026-03-16T12:00:00Z"
+                    revoked: false
+  /sync/bundle:
+    post:
+      tags: [sync]
+      summary: Receive a synced KeyBundle from a peer server
+      description: |
+        Server-to-server sync endpoint. Accepts a SignedRecord from a peer and stores it locally.
+        In dead mode this endpoint is unauthenticated; in living mode it should require mutual TLS or shared secret.
+      operationId: syncBundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedRecord'
+      responses:
+        '200':
+          description: Bundle accepted and stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Invalid bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '409':
+          description: Conflict with existing record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+  /sync/status:
+    get:
+      tags: [sync]
+      summary: Get sync status of this node
+      operationId: getSyncStatus
+      responses:
+        '200':
+          description: Sync status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum: [dead, living]
+                    description: Current operating mode of this server.
+                  peerCount:
+                    type: integer
+                    description: Number of known peer servers (0 in dead mode).
+                  lastSyncAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  keyCount:
+                    type: integer
+                    description: Total number of key bundles stored.
+              example:
+                mode: "dead"
+                peerCount: 0
+                lastSyncAt: null
+                keyCount: 42
+  /admin/health:
+    get:
+      tags: [admin]
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded, error]
+                  mode:
+                    type: string
+                    enum: [dead, living]
+                  uptime:
+                    type: integer
+                    description: Server uptime in seconds.
+              example:
+                status: "ok"
+                mode: "dead"
+                uptime: 3600
+  /admin/stats:
+    get:
+      tags: [admin]
+      summary: Retrieve server statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Server statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalKeys:
+                    type: integer
+                  totalRevocations:
+                    type: integer
+                  totalSearches:
+                    type: integer
+                  mode:
+                    type: string
+                    enum: [dead, living]
+              example:
+                totalKeys: 42
+                totalRevocations: 3
+                totalSearches: 150
+                mode: "dead"
+  /admin/purge:
+    delete:
+      tags: [admin]
+      summary: Purge all keys (dead mode only)
+      description: |
+        Removes all stored key bundles. Only available in dead mode for local development/testing.
+        This endpoint is intentionally absent from the living mode spec.
+      operationId: purgeAllKeys
+      responses:
+        '200':
+          description: All keys purged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '403':
+          description: Forbidden — purge not available in living mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for living mode authentication.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token for living mode authentication.
+
+  schemas:
+    UserId:
+      type: object
+      description: Represents a PGP User ID (name + email + optional comment).
+      required:
+        - email
+      properties:
+        name:
+          type: string
+          example: "Alice Example"
+        email:
+          type: string
+          format: email
+          example: "alice@example.test"
+        comment:
+          type: string
+          example: "test key"
+
+    Signature:
+      type: object
+      description: A single cryptographic signature attached to a key or record.
+      required:
+        - signer
+        - signature
+        - signatureType
+        - createdAt
+      properties:
+        signer:
+          type: string
+          description: Fingerprint or key ID of the signer.
+          example: "AABBCCDDEEFF00112233445566778899AABBCCDD"
+        signature:
+          type: string
+          description: Base64-encoded signature value, prefixed with 'b64:'.
+          example: "b64:MIIBIjANBg..."
+        signatureType:
+          type: string
+          enum: [self, third-party, subkey]
+          description: Type of signature.
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-03-16T12:00:05Z"
+
+    Revocation:
+      type: object
+      description: A revocation record for a key.
+      required:
+        - revoker
+        - signature
+        - revokedAt
+      properties:
+        revoker:
+          type: string
+          description: Fingerprint of the revoking key.
+          example: "AABBCCDDEEFF00112233445566778899AABBCCDD"
+        reason:
+          type: string
+          description: Human-readable revocation reason.
+          example: "Key compromised (test)"
+        signature:
+          type: string
+          description: Base64-encoded revocation signature, prefixed with 'b64:'.
+          example: "b64:MIICdwIBAAKBgQ..."
+        revokedAt:
+          type: string
+          format: date-time
+          example: "2026-03-17T08:00:00Z"
+
+    KeyBundle:
+      type: object
+      description: The core public-key bundle containing all key material and metadata.
+      required:
+        - fingerprint
+        - fingerprintAlgorithm
+        - armoredPublicKey
+        - userIds
+        - createdAt
+        - uploadedAt
+        - mode
+      properties:
+        fingerprint:
+          type: string
+          description: Hex-encoded fingerprint of the primary key.
+          example: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+        fingerprintAlgorithm:
+          type: string
+          enum: [sha1, sha256]
+          description: Hashing algorithm used to derive the fingerprint.
+        armoredPublicKey:
+          type: string
+          description: ASCII-armored PGP public key block.
+        userIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 1
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the key was originally created.
+        uploadedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the key was first uploaded to this server.
+        lastModifiedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent update.
+        uploader:
+          type: string
+          description: Identifier of the uploader (e.g., 'local', a user ID, or a peer server ID).
+          example: "local"
+        mode:
+          type: string
+          enum: [dead, living]
+          description: The operating mode under which this bundle was uploaded.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Arbitrary key-value metadata attached to this bundle.
+        signatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/Signature'
+          description: List of certifying signatures on the key bundle.
+        revocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Revocation'
+          description: List of revocation records attached to this key.
+
+    SignedRecord:
+      type: object
+      description: |
+        A canonicalized, signed wrapper around a KeyBundle. The canonical serialization is
+        used as the data signed by the record-level signatures.
+      required:
+        - recordId
+        - payload
+        - signatures
+        - canonicalizedAt
+      properties:
+        recordId:
+          type: string
+          description: Server-assigned unique identifier for this record.
+          example: "rec_9f6b3cdeadbeef"
+        payload:
+          $ref: '#/components/schemas/KeyBundle'
+        signatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/Signature'
+          description: Record-level signatures covering the canonical serialization of the payload.
+        canonicalizedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the server last canonicalized and signed this record.
+          example: "2026-03-16T12:00:05Z"
+
+    KeyBundleSummary:
+      type: object
+      description: Lightweight summary of a key bundle for use in search results.
+      required:
+        - fingerprint
+        - primaryUser
+        - mode
+        - createdAt
+      properties:
+        fingerprint:
+          type: string
+          example: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+        primaryUser:
+          type: string
+          description: String representation of the primary User ID.
+          example: "Alice Example <alice@example.test>"
+        mode:
+          type: string
+          enum: [dead, living]
+        createdAt:
+          type: string
+          format: date-time
+        revoked:
+          type: boolean
+          description: Whether this key has any active revocations.
+          default: false
+
+    UploadResponse:
+      type: object
+      description: Response returned after a successful key upload.
+      required:
+        - recordId
+        - status
+      properties:
+        recordId:
+          type: string
+          description: The server-assigned record ID for the uploaded key.
+          example: "rec_9f6b3cdeadbeef"
+        status:
+          type: string
+          enum: [created, updated]
+          description: Whether the upload created a new record or updated an existing one.
+        message:
+          type: string
+          example: "Key uploaded successfully."
+
+    GenericResponse:
+      type: object
+      description: Generic API response for success/error messages.
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+          example: "ok"
+        message:
+          type: string
+          example: "Operation completed successfully."
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional additional details (e.g., validation errors).
