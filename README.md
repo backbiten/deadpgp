@@ -30,6 +30,17 @@ This project is evolving toward an orchestration + policy layer over GnuPG/OpenP
 
 See `docs/SPEC.md` for the proposed protocol/state machine and configuration format.
 
+### Documentation
+
+| Document | Description |
+|---|---|
+| [`docs/crypto-basics.md`](docs/crypto-basics.md) | Threat-modeling primer, TLS vs PGP, OpenPGP best practices, algorithm guidance |
+| [`docs/SPEC.md`](docs/SPEC.md) | Protocol/state machine specification (Living PGP) |
+| [`docs/workflows/sequenced-reveal.md`](docs/workflows/sequenced-reveal.md) | Sequenced reveal state machine, quorum approvals, JSONL audit log, policy checks |
+| [`docs/hkp-dead-mode.md`](docs/hkp-dead-mode.md) | HKP endpoints, safety guidance, curl/GPG examples for local keyserver stub |
+| [`docs/HKP_COMPAT.md`](docs/HKP_COMPAT.md) | Detailed HKP compatibility notes and sample client code |
+| [`examples/gpg/`](examples/gpg/) | Runnable shell scripts: key generation, export/import, encrypt/decrypt, sign/verify, revocation |
+
 ---
 
 ## 32Hybrid (Go — [`32Hybrid/`](32Hybrid/))
