@@ -1,4 +1,5 @@
 import hashlib
+import os
 from core.audit import JSONLogger
 from quantum.shield import HybridQuantumShield
 
@@ -37,8 +38,9 @@ class UltraToughEncryption:
         2. High-bit Symmetric encryption for the payload.
         3. Quantum Shielding for the entire transport packet.
         """
-        # Step 1: Wrap the session key (Hybrid approach)
-        session_key = self.generate_ultra_symmetric_key(b"earth-saving-entropy")
+        # Step 1: Generate a cryptographically secure random 512-bit session key
+        session_key = os.urandom(64)
+        self.logger.log_event("SESSION_KEY_GENERATED", {"source": "os.urandom", "bits": 512})
         
         # Step 2: Simulate the 'Tough' RSA wrap
         # In a real environment, this calls a library like cryptography or GnuPG
